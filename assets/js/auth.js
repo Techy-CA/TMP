@@ -1,6 +1,8 @@
-/* ── Auth State Listener ─────────────────── */
 auth.onAuthStateChanged(async (user) => {
-  if (!user) { showScreen("auth"); return; }
+  if (!user) {
+    showScreen("auth");
+    return;
+  }
 
   let snap = await db.collection("users").doc(user.uid).get();
 
@@ -9,41 +11,47 @@ auth.onAuthStateChanged(async (user) => {
       fullName: user.displayName || "",
       email: user.email || "",
       role: "member",
-      phone: "", dob: "", age: 0,
-      aadhaar: "", pan: "", city: "",
-      state: "", pinCode: "", fullAddress: ""
+      phone: "",
+      dob: "",
+      age: 0,
+      aadhaar: "",
+      pan: "",
+      city: "",
+      state: "",
+      pinCode: "",
+      fullAddress: ""
     };
     await db.collection("users").doc(user.uid).set(defaultData);
     snap = await db.collection("users").doc(user.uid).get();
   }
 
-  window._user     = user;
+  window._user = user;
   window._userData = snap.data();
 
   showScreen("app");
   initApp(user, window._userData);
 });
 
-/* ── Login ───────────────────────────────── */
-document.getElementById("loginForm").addEventListener("submit", async (e) => {
+document.getElementById("loginForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const email    = v("loginEmail");
-  const password = v("loginPassword");
-  const errEl    = document.getElementById("loginError");
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value.trim();
+  const errEl = document.getElementById("loginError");
   errEl.textContent = "";
   try {
     await auth.signInWithEmailAndPassword(email, password);
-  } catch (err) { errEl.textContent = friendlyError(err.code); }
+  } catch (err) {
+    errEl.textContent = friendlyError(err.code);
+  }
 });
 
-/* ── Register ────────────────────────────── */
-document.getElementById("registerForm").addEventListener("submit", async (e) => {
+document.getElementById("registerForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const fullName = v("regName");
-  const email    = v("regEmail");
-  const password = v("regPassword");
-  const role     = document.getElementById("regRole").value;
-  const errEl    = document.getElementById("regError");
+  const fullName = document.getElementById("regName").value.trim();
+  const email = document.getElementById("regEmail").value.trim();
+  const password = document.getElementById("regPassword").value.trim();
+  const role = document.getElementById("regRole").value;
+  const errEl = document.getElementById("regError");
   errEl.textContent = "";
   try {
     const cred = await auth.createUserWithEmailAndPassword(email, password);
@@ -53,40 +61,43 @@ document.getElementById("registerForm").addEventListener("submit", async (e) => 
       aadhaar: "", pan: "", city: "",
       state: "", pinCode: "", fullAddress: ""
     });
-    showToast("Account created — welcome to TeamSync");
-  } catch (err) { errEl.textContent = friendlyError(err.code); }
+    showToast("Account created successfully");
+  } catch (err) {
+    errEl.textContent = friendlyError(err.code);
+  }
 });
 
-/* ── Logout ──────────────────────────────── */
-document.getElementById("logoutBtn").addEventListener("click", async () => {
+document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+  if (window.unsubscribeTasks) window.unsubscribeTasks();
+  if (window.unsubscribeUsers) window.unsubscribeUsers();
+  if (window.unsubscribeNotifs) window.unsubscribeNotifs();
   await auth.signOut();
-  document.body.classList.remove("role-admin","role-member");
   showScreen("auth");
 });
 
-/* ── Tab toggle ──────────────────────────── */
-document.querySelectorAll(".atab").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".atab").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    const tab = btn.dataset.tab;
-    document.querySelectorAll(".aform").forEach(f => f.classList.remove("active"));
-    document.getElementById(tab === "login" ? "loginForm" : "registerForm").classList.add("active");
-  });
+document.getElementById("loginTabBtn")?.addEventListener("click", () => {
+  document.getElementById("loginTabBtn").classList.add("active");
+  document.getElementById("registerTabBtn").classList.remove("active");
+  document.getElementById("loginForm").classList.add("active");
+  document.getElementById("registerForm").classList.remove("active");
 });
 
-/* ── Helpers ─────────────────────────────── */
-function v(id) { return document.getElementById(id).value.trim(); }
+document.getElementById("registerTabBtn")?.addEventListener("click", () => {
+  document.getElementById("registerTabBtn").classList.add("active");
+  document.getElementById("loginTabBtn").classList.remove("active");
+  document.getElementById("registerForm").classList.add("active");
+  document.getElementById("loginForm").classList.remove("active");
+});
 
 function friendlyError(code) {
-  const m = {
-    "auth/user-not-found":       "No account found with this email.",
-    "auth/wrong-password":       "Incorrect password. Try again.",
-    "auth/invalid-credential":   "Invalid email or password.",
-    "auth/email-already-in-use": "This email is already registered.",
-    "auth/invalid-email":        "Please enter a valid email address.",
-    "auth/weak-password":        "Password must be at least 6 characters.",
-    "auth/too-many-requests":    "Too many attempts. Please try again later."
+  const map = {
+    "auth/user-not-found": "No account found with this email.",
+    "auth/wrong-password": "Incorrect password.",
+    "auth/email-already-in-use": "Email already registered.",
+    "auth/invalid-email": "Invalid email address.",
+    "auth/weak-password": "Password must be at least 6 characters.",
+    "auth/too-many-requests": "Too many attempts. Try again later.",
+    "auth/invalid-credential": "Invalid email or password."
   };
-  return m[code] || "Something went wrong. Please try again.";
+  return map[code] || "Something went wrong. Try again.";
 }
