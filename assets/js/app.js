@@ -6,7 +6,7 @@ window.unsubscribeUsers = null;
 window.unsubscribeNotifs = null;
 
 function safe(str) {
-  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;");
 }
 function v(id) { return document.getElementById(id)?.value.trim() ?? ""; }
 function initial(str) { return (str || "U")[0].toUpperCase(); }
@@ -163,6 +163,41 @@ function renderTask(doc, role, uid) {
   return div;
 }
 
+function memberDetailsHTML(u) {
+  return `
+    <div class="info-rows">
+      <div class="info-row"><span class="ir-label">Full Name</span><span class="ir-val">${safe(u.fullName || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">Email</span><span class="ir-val">${safe(u.email || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">Role</span><span class="ir-val">${safe(u.role || "member")}</span></div>
+      <div class="info-row"><span class="ir-label">Phone</span><span class="ir-val">${safe(u.phone || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">Date of Birth</span><span class="ir-val">${safe(u.dob || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">Age</span><span class="ir-val">${safe(u.age || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">Aadhaar</span><span class="ir-val">${safe(u.aadhaar || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">PAN</span><span class="ir-val">${safe(u.pan || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">City</span><span class="ir-val">${safe(u.city || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">State</span><span class="ir-val">${safe(u.state || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">PIN Code</span><span class="ir-val">${safe(u.pinCode || "—")}</span></div>
+      <div class="info-row"><span class="ir-label">Address</span><span class="ir-val">${safe(u.fullAddress || "—")}</span></div>
+    </div>
+  `;
+}
+
+function openMemberModal(u) {
+  const m = document.getElementById("memberModal");
+  const t = document.getElementById("memberModalTitle");
+  const b = document.getElementById("memberModalBody");
+  if (!m || !t || !b) return;
+  t.textContent = u.fullName || u.email || "Member Details";
+  b.innerHTML = memberDetailsHTML(u);
+  m.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+function closeMemberModal() {
+  document.getElementById("memberModal")?.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
 window.editTask = async function(taskId) {
   const docSnap = await db.collection("tasks").doc(taskId).get();
   if (!docSnap.exists) { showToast("Task not found"); return; }
@@ -272,33 +307,34 @@ function setupRealtime() {
     if (my && !my.children.length) my.innerHTML = emptyState("No tasks assigned to you.");
   });
 
-  unsubscribeUsers = db.collection("users").onSnapshot(async snap => {
-    const isAdmin = await hasAdminClaim();
+  unsubscribeUsers = db.collection("users").onSnapshot(snap => {
     const adminList = document.getElementById("adminMemberList");
     const teamList = document.getElementById("dashTeamList");
     const memberCount = document.getElementById("memberCount");
     const assignee = document.getElementById("taskAssignee");
-
-    if (!isAdmin) {
-      if (adminList) adminList.innerHTML = emptyState("Admin access required.");
-      if (teamList) teamList.innerHTML = "";
-      if (memberCount) memberCount.textContent = "0";
-      if (assignee) assignee.innerHTML = '<option value="">Select team member</option>';
-      return;
-    }
 
     if (adminList) adminList.innerHTML = "";
     if (teamList) teamList.innerHTML = "";
     if (assignee) assignee.innerHTML = '<option value="">Select team member</option>';
 
     let count = 0;
+    const seen = new Set();
+
     snap.forEach(doc => {
       const u = doc.data() || {};
+      if (u.disabled === true) return;
+
+      const key = (doc.id || u.email || "").toLowerCase().trim();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
       count++;
+
+      const canRemove = role === "admin" && doc.id !== uid;
 
       if (adminList) {
         const row = document.createElement("div");
         row.className = "member-row";
+        row.style.cursor = "pointer";
         row.innerHTML = `
           <div class="m-avatar">${initial(u.fullName || u.email)}</div>
           <div class="m-info">
@@ -306,8 +342,9 @@ function setupRealtime() {
             <small>${safe(u.email || "")}</small>
           </div>
           <span class="badge ${u.role === "admin" ? "badge-in-progress" : "badge-low"}">${safe(u.role || "member")}</span>
-          ${doc.id !== uid ? `<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#dc2626" onclick="removeUser('${doc.id}','${safe(u.fullName || u.email || "")}')">Remove</button>` : ""}
+          ${canRemove ? `<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#dc2626" onclick="event.stopPropagation();disableUser('${doc.id}','${safe(u.fullName || u.email || "")}')">Remove</button>` : ""}
         `;
+        row.addEventListener("click", () => openMemberModal({ id: doc.id, ...u }));
         adminList.appendChild(row);
       }
 
@@ -390,6 +427,7 @@ document.getElementById("searchInput")?.addEventListener("input", (e) => {
     document.getElementById("filterStatus").value,
     document.getElementById("filterPriority").value
   );
+
   const list = document.getElementById("allTaskList");
   if (!list) return;
   list.innerHTML = "";
@@ -533,15 +571,19 @@ window.cycleAdminTask = async function(taskId, uid) {
   openUpdateModal("Task Updated", `"${t.title}" has been moved to ${next}.`);
 };
 
-window.removeUser = async function(userId, userName) {
-  if (!confirm(`Remove ${userName || "this user"} from the portal?`)) return;
-  const tasks = await db.collection("tasks").where("assignedToUid", "==", userId).get();
-  const batch = db.batch();
-  tasks.forEach(d => batch.delete(d.ref));
-  batch.delete(db.collection("users").doc(userId));
-  await batch.commit();
-  showToast("User removed");
-  openUpdateModal("User Removed", `${userName || "The user"} has been removed from the portal.`);
+window.disableUser = async function(userId, userName) {
+  if ((window._userData?.role || "member") !== "admin") return showToast("Only admin can remove users");
+  if (userId === window._user?.uid) return showToast("You cannot remove yourself");
+  if (!confirm(`Disable ${userName || "this user"}?`)) return;
+
+  try {
+    await db.collection("users").doc(userId).set({ disabled: true }, { merge: true });
+    showToast("User removed from team list");
+    openUpdateModal("User Disabled", `${userName || "The user"} access has been disabled.`);
+  } catch (err) {
+    console.error("disableUser error:", err);
+    showToast(err.message || "Failed to disable user");
+  }
 };
 
 document.querySelectorAll(".sb-item, [data-view]").forEach(btn => {
@@ -571,55 +613,8 @@ document.getElementById("logoutBtn")?.addEventListener("click", async () => {
   showScreen("auth");
 });
 
-window.loadAllTasks = function(statusFilter = "", priorityFilter = "") {
-  const role = window._userData?.role || "member";
-  const uid = window._user?.uid;
-  const list = document.getElementById("allTaskList");
-  if (!list) return;
-  list.innerHTML = "";
-  db.collection("tasks").orderBy("createdAt", "desc").get().then(snap => {
-    let count = 0;
-    snap.forEach(doc => {
-      const t = doc.data();
-      if (statusFilter && t.status !== statusFilter) return;
-      if (priorityFilter && t.priority !== priorityFilter) return;
-      if (role !== "admin" && t.assignedToUid !== uid) return;
-      count++;
-      list.appendChild(renderTask(doc, role, uid));
-    });
-    if (count === 0) list.innerHTML = emptyState("No tasks match your filters.");
-  });
-};
-
-document.getElementById("filterStatus")?.addEventListener("change", () => {
-  window.loadAllTasks(document.getElementById("filterStatus").value, document.getElementById("filterPriority").value);
-});
-document.getElementById("filterPriority")?.addEventListener("change", () => {
-  window.loadAllTasks(document.getElementById("filterStatus").value, document.getElementById("filterPriority").value);
-});
-
-document.getElementById("searchInput")?.addEventListener("input", (e) => {
-  const q = e.target.value.toLowerCase().trim();
-  if (!q) return window.loadAllTasks(
-    document.getElementById("filterStatus").value,
-    document.getElementById("filterPriority").value
-  );
-
-  const list = document.getElementById("allTaskList");
-  if (!list) return;
-  list.innerHTML = "";
-  db.collection("tasks").orderBy("createdAt", "desc").get().then(snap => {
-    const role = window._userData?.role || "member";
-    const uid = window._user?.uid;
-    let count = 0;
-    snap.forEach(doc => {
-      const t = doc.data();
-      const hay = [t.title, t.description, t.assignedToName].join(" ").toLowerCase();
-      if (role !== "admin" && t.assignedToUid !== uid) return;
-      if (!hay.includes(q)) return;
-      count++;
-      list.appendChild(renderTask(doc, role, uid));
-    });
-    if (count === 0) list.innerHTML = emptyState(`No results for "${q}"`);
-  });
+document.getElementById("closeMemberModal")?.addEventListener("click", closeMemberModal);
+document.getElementById("closeMemberModal2")?.addEventListener("click", closeMemberModal);
+document.getElementById("memberModal")?.addEventListener("click", e => {
+  if (e.target.id === "memberModal") closeMemberModal();
 });
