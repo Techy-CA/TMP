@@ -7,7 +7,8 @@ async function loadAdminMembers() {
   let count = 0;
 
   snap.forEach(doc => {
-    const u = doc.data();
+    const u = doc.data() || {};
+    if (u.disabled === true) return;
     count++;
 
     const row = document.createElement("div");
@@ -18,8 +19,8 @@ async function loadAdminMembers() {
         <strong>${safe(u.fullName || "Unnamed")}</strong>
         <small>${safe(u.email || "")}</small>
       </div>
-      <span class="badge ${u.role === 'admin' ? 'badge-in-progress' : 'badge-low'}">${safe(u.role || "member")}</span>
-      ${window._userData?.role === "admin" && doc.id !== window._user.uid ? `<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#dc2626" onclick="removeUser('${doc.id}')">Remove</button>` : ""}
+      <span class="badge ${u.role === "admin" ? "badge-in-progress" : "badge-low"}">${safe(u.role || "member")}</span>
+      ${window._userData?.role === "admin" && doc.id !== window._user?.uid ? `<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#dc2626" onclick="removeUser('${doc.id}')">Remove</button>` : ""}
     `;
     list.appendChild(row);
   });
@@ -35,7 +36,8 @@ async function loadAssigneeDropdown() {
 
   const snap = await db.collection("users").orderBy("fullName").get();
   snap.forEach(doc => {
-    const u = doc.data();
+    const u = doc.data() || {};
+    if (u.disabled === true) return;
     const opt = document.createElement("option");
     opt.value = doc.id;
     opt.textContent = `${u.fullName || "Unnamed"} — ${u.email || ""}`;
@@ -52,8 +54,8 @@ document.getElementById("assignTaskForm")?.addEventListener("submit", async (e) 
   const priority = document.getElementById("taskPriority").value;
   const dueDate = document.getElementById("taskDue").value;
 
-  if (!title) { showToast("Task title is required"); return; }
-  if (!assignedToUid) { showToast("Please select a team member"); return; }
+  if (!title) return showToast("Task title is required");
+  if (!assignedToUid) return showToast("Please select a team member");
 
   const udoc = await db.collection("users").doc(assignedToUid).get();
   const udata = udoc.data() || {};
@@ -79,13 +81,23 @@ document.getElementById("assignTaskForm")?.addEventListener("submit", async (e) 
 });
 
 window.removeUser = async function(userId) {
+  if ((window._userData?.role || "member") !== "admin") return showToast("Only admin can remove users");
+  if (userId === window._user?.uid) return showToast("You cannot remove yourself");
   if (!confirm("Remove this user and their tasks?")) return;
 
-  const tasksSnap = await db.collection("tasks").where("assignedToUid", "==", userId).get();
-  const batch = db.batch();
-  tasksSnap.forEach(d => batch.delete(d.ref));
-  batch.delete(db.collection("users").doc(userId));
-  await batch.commit();
-
-  showToast("User removed");
+  try {
+    const tasksSnap = await db.collection("tasks").where("assignedToUid", "==", userId).get();
+    const batch = db.batch();
+    tasksSnap.forEach(d => batch.delete(d.ref));
+    batch.delete(db.collection("users").doc(userId));
+    await batch.commit();
+    showToast("User removed");
+    openUpdateModal("User Removed", "The selected user and their tasks were deleted.");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Failed to remove user");
+  }
 };
+
+window.loadAdminMembers = loadAdminMembers;
+window.loadAssigneeDropdown = loadAssigneeDropdown;

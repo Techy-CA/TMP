@@ -9,6 +9,10 @@ const firebaseConfig = {
   measurementId: "G-LMRT4EFPTC"
 };
 
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+
+window.auth = firebase.auth();
+window.db = firebase.firestore();
+window.firebaseConfig = firebaseConfig;

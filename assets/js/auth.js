@@ -29,7 +29,11 @@ auth.onAuthStateChanged(async (user) => {
   window._userData = snap.data();
 
   showScreen("app");
-  initApp(user, window._userData);
+  if (typeof initApp === "function") {
+    initApp(user, window._userData);
+  } else {
+    console.error("initApp is not defined");
+  }
 });
 
 document.getElementById("loginForm")?.addEventListener("submit", async (e) => {
@@ -56,10 +60,18 @@ document.getElementById("registerForm")?.addEventListener("submit", async (e) =>
   try {
     const cred = await auth.createUserWithEmailAndPassword(email, password);
     await db.collection("users").doc(cred.user.uid).set({
-      fullName, email, role,
-      phone: "", dob: "", age: 0,
-      aadhaar: "", pan: "", city: "",
-      state: "", pinCode: "", fullAddress: ""
+      fullName,
+      email,
+      role,
+      phone: "",
+      dob: "",
+      age: 0,
+      aadhaar: "",
+      pan: "",
+      city: "",
+      state: "",
+      pinCode: "",
+      fullAddress: ""
     });
     showToast("Account created successfully");
   } catch (err) {
