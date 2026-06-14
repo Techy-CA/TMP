@@ -25,9 +25,11 @@ let reportInitialized = false;
       const page = document.getElementById("reportPage");
 
       if (!user) {
-        window.location.href = "index.html";
-        return;
-      }
+  if (loading) loading.style.display = "none";
+  if (denied) denied.style.display = "block";
+  if (page) page.style.display = "none";
+  return;
+}
 
       try {
         const snap = await db.collection("users").doc(user.uid).get();
